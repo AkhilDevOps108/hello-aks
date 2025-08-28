@@ -35,8 +35,8 @@ jobs:
       uses: azure/aks-set-context@v4
       with:
         resource-group: ${{ secrets.AZURE_RESOURCE_GROUP }}
-        cluster-name:  ${{ secrets.AZURE_AKS_CLUSTER }}
-
+        cluster-name: ${{ secrets.AZURE_AKS_CLUSTER }}
+        
     # Option A: render k8s.yaml tag and apply (default)
     - name: Render manifest with tag and apply
       run: |
