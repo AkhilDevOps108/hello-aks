@@ -1,1 +1,78 @@
-s
+####Auto deploying using a cloudshell on azure cloud ###
+
+
+# remove any broken file
+rm -f deploy_hello_aks.sh
+
+# write a clean script in one shot
+cat > deploy_hello_aks.sh <<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ====== CONFIG (change only if needed) ======
+SUB="b83d566f-1510-4e2e-bde3-62d78f307ed1"   # your subscription id
+AKS="mcdevops-aks1"                          # your AKS cluster name
+ACR="mcdevopsacr1"                           # your ACR name (not FQDN)
+GIT_USER="AkhilDevOps108"
+REPO="hello-aks"
+BRANCH="main"                                # branch that has Dockerfile + k8s.yaml
+DEPLOY="hello-aks"                           # Deployment name in k8s.yaml
+CONTAINER="hello-aks"                        # container name in the Deployment
+SERVICE="hello-aks-svc"                      # Service name in k8s.yaml
+# ============================================
+
+say(){ echo -e "\n\033[1;36m==> $*\033[0m"; }
+
+say "Setting subscription"
+az account set --subscription "$SUB"
+
+say "Finding AKS resource group for cluster: $AKS"
+AKS_RG=$(az aks list --query "[?name=='$AKS'] | [0].resourceGroup" -o tsv)
+if [ -z "${AKS_RG:-}" ]; then
+  echo "Could not find AKS '$AKS' in this subscription. Check the name (and subscription)."
+  echo "Tip: az aks list -o table"
+  exit 1
+fi
+echo "AKS resource group: $AKS_RG"
+
+say "Getting kubeconfig for AKS"
+az aks get-credentials -g "$AKS_RG" -n "$AKS" --overwrite-existing
+kubectl cluster-info >/dev/null
+
+say "Attaching ACR '$ACR' to AKS '$AKS' (idempotent)"
+az aks update -g "$AKS_RG" -n "$AKS" --attach-acr "$ACR" >/dev/null
+
+say "Building image in ACR from GitHub repo"
+ACR_SERVER=$(az acr show -n "$ACR" --query loginServer -o tsv)
+if [ -z "$ACR_SERVER" ]; then echo "ACR $ACR not found"; exit 1; fi
+IMAGE="$ACR_SERVER/hello-aks:${BRANCH}"
+az acr build --registry "$ACR" --image "hello-aks:${BRANCH}" "https://github.com/${GIT_USER}/${REPO}.git#${BRANCH}"
+
+say "Applying k8s.yaml from GitHub (idempotent)"
+kubectl apply -f "https://raw.githubusercontent.com/${GIT_USER}/${REPO}/${BRANCH}/k8s.yaml"
+
+say "Updating Deployment image to: $IMAGE"
+kubectl set image deploy/"$DEPLOY" "$CONTAINER"="$IMAGE" --record
+
+say "Waiting for rollout to complete"
+kubectl rollout status deploy/"$DEPLOY" --timeout=180s
+
+say "Waiting for Service EXTERNAL-IP"
+for i in $(seq 1 30); do
+  IP=$(kubectl get svc "$SERVICE" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+  if [ -n "${IP:-}" ]; then break; fi
+  echo "  ...waiting ($i/30)"; sleep 8
+done
+
+echo
+echo "SERVICE     : $SERVICE"
+echo "EXTERNAL-IP : ${IP:-<pending>}"
+if [ -n "${IP:-}" ]; then
+  echo "Try:  curl -s http://$IP/"
+fi
+
+say "Done ✅"
+BASH
+
+# make it executable
+chmod +x deploy_hello_aks.sh
