@@ -2,35 +2,44 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hello-aks
-  labels: { app: hello-aks }
+  labels:
+    app: hello-aks
 spec:
   replicas: 2
   selector:
-    matchLabels: { app: hello-aks }
+    matchLabels:
+      app: hello-aks
   template:
     metadata:
-      labels: { app: hello-aks }
+      labels:
+        app: hello-aks
     spec:
       containers:
       - name: hello-aks
-        image: <ACR_LOGIN_SERVER>/hello-aks:v1   # e.g. mcdevopsacr.azurecr.io/hello-aks:v1
+        image: mcdevopsacr1.azurecr.io/hello-aks:main
         ports:
         - containerPort: 8080
         readinessProbe:
-          httpGet: { path: /healthz, port: 8080 }
+          httpGet:
+            path: /healthz
+            port: 8080
           initialDelaySeconds: 5
         livenessProbe:
-          httpGet: { path: /healthz, port: 8080 }
+          httpGet:
+            path: /healthz
+            port: 8080
           initialDelaySeconds: 10
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: hello-aks-svc
-  labels: { app: hello-aks }
+  labels:
+    app: hello-aks
 spec:
   type: LoadBalancer
-  selector: { app: hello-aks }
+  selector:
+    app: hello-aks
   ports:
   - name: http
     port: 80
